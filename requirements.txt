@@ -1,1 +1,5 @@
 openai
+fastapi
+beautifulsoup4
+uvicorn
+requests
