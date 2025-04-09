@@ -1,9 +1,6 @@
 from fastapi import FastAPI
-from fastapi.responses import RedirectResponse
 import os
 from dotenv import load_dotenv
-from bs4 import BeautifulSoup
-import base64
 import uvicorn
 
 #File imports
