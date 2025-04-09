@@ -3,3 +3,6 @@ fastapi
 beautifulsoup4
 uvicorn
 requests
+google-api-python-client 
+google-auth-oauthlib 
+google-auth-httplib2

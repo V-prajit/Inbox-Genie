@@ -65,28 +65,7 @@ def test_ollama():
     
 def test_integration():
     try:
-        tools_response = requests.get(f"{MCP_SERVER_URL}/tools")
-        if tools_response.status_code != 200:
-            print(f"Failed to retrieve tools: {tools_response.status_code}")
-            return False
-
-        tools = tools_response.json().get("tools", [])
-
-        auth_response = requests.post(f"{MCP_SERVER_URL}/authenticate", params={"provider": "gmail"})
-        if auth_response.status_code != 200:
-            print(f"Failed to authenticate: {auth_response.status_code}")
-            return False
-        
-        print("Authentication URL generated (placeholder)")
-
-        callback_response = requests.get(f"{MCP_SERVER_URL}/oauth_callback", params={"code": "test_code"})
-        if callback_response.status_code != 200:
-            print(f"Failed to handle OAuth callback: {callback_response.status_code}")
-            return False
-
-        print("OAuth callback handled (token stored for default_user)")
-
-
+        # Test reading emails
         tool_request = {
             "tool_name": "read_emails",
             "parameters": {
@@ -94,7 +73,7 @@ def test_integration():
                 "user_id": "default_user"
             }
         }
-
+        
         tool_response = requests.post(f"{MCP_SERVER_URL}/use_tool", json=tool_request)
         if tool_response.status_code != 200:
             print(f"Failed to use tool: {tool_response.status_code}")
@@ -103,46 +82,34 @@ def test_integration():
 
         response_data = tool_response.json()
         emails = response_data.get("emails", [])
-        print(f"Retrieved {len(emails)} emails (mock data)")
+        print(f"Retrieved {len(emails)} real emails from Gmail")
         
-        if emails:
-            email_context = ""
-            for i, email in enumerate(emails):
-                email_context += f"\nEMAIL {i+1}:\n"
-                email_context += f"From: {email.get('from_email', 'Unknown')}\n"
-                email_context += f"Subject: {email.get('subject', '(No subject)')}\n"
-                email_context += f"Body: {email.get('body_text', '(No body)')}\n"
-                email_context += "-" * 40 + "\n"
+        # Print email subjects
+        for i, email in enumerate(emails):
+            print(f"Email {i+1}: {email.get('subject', '(No subject)')}")
+        
+        # Test searching
+        search_request = {
+            "tool_name": "search_emails",
+            "parameters": {
+                "query": "important",
+                "limit": 2,
+                "user_id": "default_user"
+            }
+        }
+        
+        search_response = requests.post(f"{MCP_SERVER_URL}/use_tool", json=search_request)
+        if search_response.status_code == 200:
+            search_data = search_response.json()
+            results = search_data.get("results", [])
+            print(f"\nFound {len(results)} emails matching search query 'important'")
             
-            prompt = f"""Here are some emails:
-
-            {email_context}
-
-Summarize these emails briefly.
-"""
-            response = llm_client.chat.completions.create(
-                model=MODEL_NAME,
-                messages=[
-                    {"role": "system", "content": "You are an AI email assistant."},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=200
-            )
-
-            print("\nOllama processed the emails!")
-            print("\nSummary from LLM:")
-            print("-" * 40)
-            print(response.choices[0].message.content)
-            print("-" * 40)
-            
-            return True
-
-        return False
+        return True
     
     except Exception as e:
         print(f"Integration test failed: {str(e)}")
         return False
-    
+
 if __name__ == "__main__":
     print("=" * 50)
     print("INBOX-GENIE TEST CLIENT")

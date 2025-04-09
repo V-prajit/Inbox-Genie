@@ -1,7 +1,9 @@
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, HTTPException, Request, Depends, Cookie
+from fastapi.responses import RedirectResponse, JSONResponse
 from pydantic import BaseModel
 from typing import Dict, List, Optional, Any
+import gmail_oauth_handler
+import gmail_tools
 
 class ToolRequest(BaseModel):
     tool_name: str
@@ -17,38 +19,77 @@ class EmailData(BaseModel):
 
 router = APIRouter()
 
-# TODO: storing token in memory for now, look into if that is the best way later
-tokens = {}
+# Store user_id in cookies
+async def get_user_id(request: Request, user_id: Optional[str] = Cookie(None)):
+    return user_id
 
 @router.get("/")
 async def root():
     return {"message": "Inbox Genie MCP Server is running"}
 
-@router.post("/authenticate")
+@router.get("/authenticate")
 async def authenticate(provider: str):
-    if provider.lower() == "gmail":
-        # TODO: Implement Gmail OAuth flow. For now, return a placeholder
-        return {"auth_url": "https://accounts.google.com/o/oauth2/auth?placeholder=true"}
-    elif provider.lower() in ["outlook", "microsoft", "microsoft365"]:
-        # TODO: Implement Microsoft OAuth flow
-        return {"auth_url": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize?placeholder=true"}
-    else:
-        raise HTTPException(status_code=400, detail=f"Unsupported provider: {provider}")
+    if provider.lower() != "gmail":
+        raise HTTPException(status_code=400, detail="Only Gmail is supported at this time")
+        
+    try:
+        auth_url, state = gmail_oauth_handler.get_gmail_auth_url()
+        return {"auth_url": auth_url, "state": state}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
     
 @router.get("/oauth_callback")
 async def oauth_callback(code: str, state: Optional[str] = None):
-    # TODO: Exchange code for tokens and store them. This is a placeholder implementation
-    user_id = "default_user"
-    tokens[user_id] = {
-        "access_token": f"placeholder_access_token_{code[:5]}",
-        "refresh_token": f"placeholder_refresh_token_{code[:5]}",
-    }
-    
-    return RedirectResponse(url="/auth_success")
+    try:
+        if not state:
+            raise HTTPException(status_code=400, detail="Missing state parameter")
+            
+        if state not in gmail_oauth_handler.state_map:
+            raise HTTPException(status_code=400, detail="Invalid state parameter")
+            
+        user_id = gmail_oauth_handler.handle_gmail_callback(code, state)
+            
+        # Set user_id in a cookie
+        response = RedirectResponse(url="/auth_success")
+        response.set_cookie(key="user_id", value=user_id, httponly=True)
+        
+        return response
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/auth_success")
-async def auth_success():
-    return {"message": "Authentication successful! You can close this window and return to the app."}
+async def auth_success(user_id: Optional[str] = Depends(get_user_id)):
+    if not user_id or not gmail_oauth_handler.is_authenticated(user_id):
+        return {"message": "Authentication failed. Please try again."}
+        
+    return {
+        "message": "Authentication successful with Gmail! You can close this window and return to the app.",
+        "user_id": user_id
+    }
+
+@router.get("/auth_status")
+async def auth_status(user_id: Optional[str] = Depends(get_user_id)):
+    if not user_id or not gmail_oauth_handler.is_authenticated(user_id):
+        return {"authenticated": False}
+        
+    return {
+        "authenticated": True,
+        "provider": "gmail",
+        "user_id": user_id
+    }
+
+@router.post("/revoke")
+async def revoke_auth(user_id: Optional[str] = Depends(get_user_id)):
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+        
+    success = gmail_oauth_handler.revoke_access(user_id)
+    if success:
+        response = JSONResponse(content={"message": "Access revoked successfully"})
+        response.delete_cookie(key="user_id")
+        return response
+    else:
+        raise HTTPException(status_code=400, detail="Failed to revoke access")
 
 @router.get("/tools")
 async def list_tools():
@@ -64,7 +105,7 @@ async def list_tools():
                 }
             },
             {
-                "name": "send_emails",
+                "name": "send_email",
                 "description": "Send an email",
                 "parameters": {
                     "to": "Recipient email address",
@@ -85,65 +126,75 @@ async def list_tools():
     }
 
 @router.post("/use_tool")
-async def use_tool(request: ToolRequest):
-    tool_name = request.tool_name
-    params = request.parameters
-    user_id = "default_user" # TODO: get from auth token
-
-    if user_id not in tokens:
+async def use_tool(request: ToolRequest, user_id: Optional[str] = Depends(get_user_id)):
+    if not user_id or not gmail_oauth_handler.is_authenticated(user_id):
         raise HTTPException(status_code=401, detail="Authentication required")
     
-    if tool_name == "read_emails":
-        #Actually fetch the emails, return Mock Data for now
-        return {
-            "emails": [
-                {
-                   "id": "email1",
-                    "from_email": "john.doe@example.com",
-                    "subject": "Meeting tomorrow",
-                    "date": "2025-04-07T15:30:00Z",
-                    "body_text": "Let's meet tomorrow at 10am to discuss the project." 
-                },
-                {
-                    "id": "email2",
-                    "from_email": "support@service.com",
-                    "subject": "Your subscription renewal",
-                    "date": "2025-04-07T12:15:00Z",
-                    "body_text": "Your subscription will renew on April 15, 2025."
-                }
-            ]
-        }
+    tool_name = request.tool_name
+    params = request.parameters
     
-    elif tool_name == "send_email":
-        required_params = ["to", "subject", "body"]
-        for param in required_params:
-            if param not in params:
-                raise HTTPException(status_code=400, detail=f"Missing required parameter: {param}")
+    try:
+        # Get Gmail credentials
+        creds = gmail_oauth_handler.get_gmail_credentials(user_id)
         
-        # TODO: implement actually sending the mail
-        return {
-            "success": True,
-            "message": f"Email to {params['to']} queued for sending",
-            "email_id": "mock_email_id_12345"
-        }
-    
-    elif tool_name == "search_emails":
-        if "query" not in params:
-            raise HTTPException(status_code=400, detail="Missing required parameter: query")
-        # TODO: Implement actual email search
-        query = params["query"]
-        return {
-            "query": query,
-            "results": [
-                {
-                    "id": "search1",
-                    "from_email": "alice@example.com",
-                    "subject": f"About the {query}",
-                    "date": "2025-04-05T10:25:00Z",
-                    "body_text": f"I wanted to discuss the {query} with you."
-                }
-            ]  
-        }
-    
-    else:
-        raise HTTPException(status_code=400, detail=f"Unsupported tool: {tool_name}")
+        if tool_name == "read_emails":
+            # Extract parameters with defaults
+            limit = int(params.get("limit", 10))
+            folder = params.get("folder", "INBOX")
+            unread_only = params.get("unread_only", False)
+            
+            # Call the Gmail tool function
+            emails = gmail_tools.read_emails(
+                credentials=creds,
+                limit=limit,
+                folder=folder,
+                unread_only=unread_only
+            )
+            
+            return {"emails": emails}
+        
+        elif tool_name == "send_email":
+            required_params = ["to", "subject", "body"]
+            for param in required_params:
+                if param not in params:
+                    raise HTTPException(status_code=400, detail=f"Missing required parameter: {param}")
+            
+            # Extract parameters
+            to = params["to"]
+            subject = params["subject"]
+            body = params["body"]
+            html = params.get("html", False)
+            
+            # Call the Gmail tool function
+            result = gmail_tools.send_email(
+                credentials=creds,
+                to=to,
+                subject=subject,
+                body=body,
+                html=html
+            )
+            
+            return result
+        
+        elif tool_name == "search_emails":
+            if "query" not in params:
+                raise HTTPException(status_code=400, detail="Missing required parameter: query")
+            
+            # Extract parameters
+            query = params["query"]
+            limit = int(params.get("limit", 10))
+            
+            # Call the Gmail tool function
+            emails = gmail_tools.search_emails(
+                credentials=creds,
+                query=query,
+                limit=limit
+            )
+            
+            return {"query": query, "results": emails}
+        
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported tool: {tool_name}")
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
