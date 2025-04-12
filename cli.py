@@ -9,24 +9,22 @@ import webbrowser
 import hashlib
 import base64
 import threading
-import queue # For communication between callback server thread and main thread
+import queue 
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 import datetime
-# Optional: for more secure storage than a file
-# import keyring
+
 
 load_dotenv()
 
-# --- Configuration ---
 MCP_SERVER_URL = os.getenv("MCP_SERVER_URL", "http://localhost:8000")
-OLLAMA_API_URL = os.getenv('BASE_URL') # For LLM
-MODEL_NAME = os.getenv('MODEL_NAME', "llama3.1:8b-instruct-q4_K_M") # For LLM
+OLLAMA_API_URL = os.getenv('BASE_URL')
+MODEL_NAME = os.getenv('MODEL_NAME', "llama3.1:8b-instruct-q4_K_M")
 
 # OAuth Config
 REDIRECT_URI = os.getenv('REDIRECT_URI', 'http://localhost:8989/callback')
 REDIRECT_PORT = int(os.getenv('REDIRECT_PORT', '8989'))
-SCOPES = os.getenv('SCOPES', '').split() # Ensure scopes match server/client_secrets
+SCOPES = os.getenv('SCOPES', '').split()
 
 # Token storage file (simple approach)
 TOKEN_FILE = "gmail_token.json"
@@ -38,13 +36,9 @@ llm_client = None
 if OLLAMA_API_URL:
     llm_client = openai.OpenAI(
         base_url=OLLAMA_API_URL,
-        api_key="ollama", # Standard key for Ollama's OpenAI compatible API
+        api_key="ollama",
     )
 else:
-    # Example if using OpenAI directly
-    # openai_api_key = os.getenv("OPENAI_API_KEY")
-    # if openai_api_key:
-    #     llm_client = openai.OpenAI(api_key=openai_api_key)
     pass
 
 if not llm_client:
