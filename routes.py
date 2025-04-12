@@ -4,10 +4,10 @@ from pydantic import BaseModel, Field
 from typing import Dict, List, Optional, Any
 from google.oauth2.credentials import Credentials
 
+import gmail_oauth_handler as gmail_oauth_handler
+import gmail_tools as gmail_tools
+from auth_utils import verify_token
 
-import gmail_oauth_handler
-import gmail_tools
-from auth_utils import verify_token #
 class ToolRequest(BaseModel):
     tool_name: str
     parameters: Dict[str, Any]
