@@ -67,20 +67,17 @@ def save_tokens(token_data):
 def load_tokens():
     """Loads token data from a file."""
     if not os.path.exists(TOKEN_FILE):
-        print(f"DEBUG: load_tokens - Token file '{TOKEN_FILE}' does not exist.") # Added Debug
         return None
     try:
         with open(TOKEN_FILE, 'r') as f:
             token_data = json.load(f)
-        print(f"DEBUG: load_tokens - Successfully loaded data: {token_data}") # Added Debug
         return token_data
     except (IOError, json.JSONDecodeError) as e:
         print(f"Error loading tokens from file: {e}")
-        print(f"DEBUG: load_tokens - Returning None due to error.") # Added Debug
+
         return None
     except Exception as e: # Catch any other potential errors
         print(f"Unexpected error in load_tokens: {e}")
-        print(f"DEBUG: load_tokens - Returning None due to unexpected error.") # Added Debug
         return None
     
 def clear_tokens():
@@ -94,9 +91,7 @@ def clear_tokens():
 
 def get_active_access_token():
     """Load tokens, refresh them if necessary, return valid tokens"""
-    print("DEBUG: get_active_access_token - Attempting to load tokens...") # Added Debug
     token_data = load_tokens()
-    print(f"DEBUG: get_active_access_token - Data received from load_tokens: {token_data}") # Added Debug
 
     if not token_data:
         print("No token data found.")
@@ -322,6 +317,70 @@ def authenticate():
              print(f"Response body: {e.response.text}")
         return False
 
+def display_clean_email_response(response_data, tool_name, limit=None, show_full=False):
+    """
+    Displays email content in a clean, readable format without debug information.
+    
+    Args:
+        response_data: The response data from the MCP server
+        tool_name: The tool that was used (read_emails, search_emails, etc.)
+        limit: Optional limit on number of emails to display
+        show_full: Whether to show the full email body or truncate it
+    """
+    print("\n" + "="*60)
+    print(" EMAIL RESULTS ".center(60, "="))
+    print("="*60)
+    
+    # Extract the appropriate email list based on tool name
+    emails = []
+    if tool_name == 'read_emails':
+        emails = response_data.get('emails', [])
+    elif tool_name == 'search_emails':
+        emails = response_data.get('results', [])
+    
+    # Handle empty results
+    if not emails:
+        print("\nNo emails found.")
+        return
+    
+    # Apply limit if specified
+    if limit and isinstance(limit, int) and limit > 0:
+        emails = emails[:limit]
+    
+    # Display each email
+    for i, email in enumerate(emails, 1):
+        print(f"\n{'-'*60}")
+        print(f" EMAIL {i} ".center(60, "-"))
+        print(f"{'-'*60}")
+        
+        # Display header info
+        print(f"From: {email.get('from_email', 'Unknown')}")
+        print(f"Subject: {email.get('subject', '(No subject)')}")
+        print(f"Date: {email.get('date', 'Unknown')}")
+        
+        # Check for unread status
+        if email.get('unread', False):
+            print("Status: UNREAD")
+        
+        print(f"{'-'*40}")
+        
+        # Display body
+        body_text = email.get('body_text', '')
+        if not body_text or not body_text.strip():
+            body_text = "(No text content available)"
+        
+        # Truncate long emails unless show_full is True
+        if not show_full and len(body_text) > 1000:
+            print(f"Body:\n{body_text[:1000]}")
+            print("\n... (Content truncated) ...")
+            print(f"\n[Email is {len(body_text)} characters long. Use 'show full emails' to see complete content.]")
+        else:
+            print(f"Body:\n{body_text}")
+    
+    print(f"\n{'-'*60}")
+    print(f" End of Results: {len(emails)} email(s) displayed ".center(60, "-"))
+    print(f"{'-'*60}")
+
 def clean_email_content(raw_content):
     body = ""
     is_html_only = False
@@ -359,7 +418,6 @@ def clean_email_content(raw_content):
             is_html_only = True
 
     except Exception as e:
-        print(f"[Debug] MIME parsing failed: {e}. Assuming input might be direct HTML/text.", file=sys.stderr)
         is_html_only = True
 
     if is_html_only:
@@ -374,7 +432,6 @@ def clean_email_content(raw_content):
              body = str(raw_content)
     
     if '<' in body and '>' in body and ('<html' in body.lower() or '<p>' in body.lower() or '<div' in body.lower() or '<br' in body.lower()):
-        print("[Debug] Detected HTML, converting to text...", file=sys.stderr)
         try:
             h = html2text.HTML2Text()
             h.ignore_links = False
@@ -382,7 +439,6 @@ def clean_email_content(raw_content):
             plain_text = h.handle(body)
             return plain_text.strip() # Remove leading/trailing whitespace
         except Exception as html_e:
-             print(f"[Debug] HTML conversion failed: {html_e}. Returning original/parsed body.", file=sys.stderr)
              return body.strip() 
     else:
         # It's likely already plain text
@@ -414,7 +470,6 @@ def make_api_call(method, endpoint, **kwargs):
     url = f"{MCP_SERVER_URL}/{endpoint.lstrip('/')}"
 
     try:
-        # print(f"DEBUG: Calling {method} {url} with headers {headers} and data {kwargs.get('json') or kwargs.get('data')}") # Debug
         response = session.request(method, url, headers=headers, **kwargs)
 
         if response.status_code == 401:
@@ -478,7 +533,6 @@ def fetch_tool_definitions():
         # Provide fallback basic definitions if needed, or handle error
         return None
 
-# --- NEW: LLM Interaction Logic ---
 def get_llm_tool_request(user_input, tool_definitions):
     """
     Sends the user input and tool definitions to the LLM
@@ -491,30 +545,42 @@ def get_llm_tool_request(user_input, tool_definitions):
         print("Tool definitions are not available. Cannot process request.")
         return None
 
-    # Construct the prompt for the LLM
-    # This is a critical part - adjust based on model behavior
+    # Construct an improved prompt for the LLM
     prompt_system = f"""You are an expert AI assistant named Inbox Genie. Your task is to understand a user's request related to managing their Gmail emails and convert it into a specific JSON format to call an API tool.
 
 You have the following tools available:
 {json.dumps(tool_definitions, indent=2)}
+
+COMMON USER REQUESTS AND HOW TO HANDLE THEM:
+1. "Show my emails" → read_emails with default parameters
+2. "Show my last 5 emails" → read_emails with limit=5
+3. "Show my unread emails" → read_emails with unread_only=true
+4. "Search for emails about meetings" → search_emails with query="meetings"
+5. "Send an email to john@example.com" → send_email with appropriate parameters
 
 Based on the user's request below, identify the single most appropriate tool to use and construct a JSON object with the required 'tool_name' and 'parameters'.
 
 Rules:
 - Only output the JSON object. Do not include any other text, explanation, or formatting like ```json ... ```.
 - Ensure all required parameters for the chosen tool are included in the JSON.
-- Infer parameter values from the user's request. Use defaults if not specified (e.g., limit=5 for reading/searching if not mentioned).
-- For 'send_email', ensure 'to', 'subject', and 'body' are present.
-- For 'search_emails', ensure 'query' is present.
-- For boolean parameters like 'unread_only' or 'html', use true/false (lowercase).
+- For 'read_emails': 
+  * Extract numbers mentioned (e.g., "show last 3 emails" → limit=3)
+  * If "unread" is mentioned, set unread_only=true
+  * Default limit is 5 if not specified
+
+- For 'search_emails':
+  * Extract search terms (e.g., "find emails about projects" → query="projects")
+  * For queries like "from John", convert to proper search syntax (query="from:John")
+  * Default limit is 5 if not specified
+
+- For 'send_email':
+  * Ensure 'to', 'subject', and 'body' are filled correctly
+  * If user request is unclear, set "error" field instead
+
 - If the user's request is unclear or doesn't match a tool, output: {{"error": "Request unclear or does not match available tools."}}
 """
 
     prompt_user = f"User request: \"{user_input}\"\n\nGenerate the JSON ToolRequest:"
-
-    print("\nSending request to LLM...")
-    # print(f"DEBUG: System Prompt:\n{prompt_system}") # Debug
-    # print(f"DEBUG: User Prompt:\n{prompt_user}") # Debug
 
     try:
         llm_response = llm_client.chat.completions.create(
@@ -523,17 +589,14 @@ Rules:
                 {"role": "system", "content": prompt_system},
                 {"role": "user", "content": prompt_user}
             ],
-            max_tokens=500, # Adjust as needed, depends on tool definition size
-            temperature=0.1, # Lower temperature for more deterministic JSON output
-            # response_format={"type": "json_object"} # Use if supported by your Ollama version/model
+            max_tokens=500,
+            temperature=0.1
         )
         llm_output = llm_response.choices[0].message.content.strip()
-        print("LLM Response received.")
-        # print(f"DEBUG: Raw LLM Output:\n{llm_output}") # Debug
 
         # Attempt to parse the LLM output as JSON
         try:
-            # Handle potential markdown code fences if response_format isn't used/working
+            # Handle potential markdown code fences
             if llm_output.startswith("```json"):
                 llm_output = llm_output.split("```json")[1].split("```")[0].strip()
             elif llm_output.startswith("```"):
@@ -543,21 +606,19 @@ Rules:
 
             # Basic validation
             if "error" in tool_request_json:
-                 print(f"LLM indicated an error: {tool_request_json['error']}")
+                 print(f"I don't understand that email command: {tool_request_json['error']}")
+                 print("Try something like 'show my emails', 'search for emails about meetings', etc.")
                  return None
+                 
             if "tool_name" not in tool_request_json or "parameters" not in tool_request_json:
-                print("Error: LLM output is missing 'tool_name' or 'parameters'.")
-                # print(f"Invalid JSON received: {llm_output}") # Debug
+                print("Sorry, I couldn't interpret your request. Please try a different phrasing.")
                 return None
 
-            # Further validation could be added here (e.g., check if tool_name exists)
-
-            print(f"LLM generated tool request for: {tool_request_json.get('tool_name')}")
+            print(f"Processing: {tool_request_json.get('tool_name')}...")
             return tool_request_json
 
         except json.JSONDecodeError:
-            print("Error: LLM did not return valid JSON.")
-            print(f"Received: {llm_output}")
+            print("Sorry, I couldn't process that request. Please try again with different wording.")
             return None
 
     except Exception as e:
@@ -663,44 +724,48 @@ def main():
                 )
 
                 if mcp_response:
-                    print("\n--- Server Response ---")
-
                     try:
                         tools_returning_email = ['read_emails', 'search_emails']
 
                         if tool_name in tools_returning_email:
-                            print("Cleaning email")
-
+                            # Process emails silently
                             if tool_name == 'read_emails' and 'emails' in mcp_response and isinstance(mcp_response.get('emails'), list):
-                                print("[Debug] Cleaning 'read_emails' response.")
                                 for email_item in mcp_response['emails']:
-                                    # Check if the email item itself has a 'body' key
                                     if isinstance(email_item, dict) and 'body' in email_item:
-                                        raw_body = email_item.get('body', '') # Get body safely
-                                        if raw_body: # Only clean if body exists
+                                        raw_body = email_item.get('body', '')
+                                        if raw_body:
                                             cleaned_body = clean_email_content(raw_body)
-                                            email_item['body'] = cleaned_body # Replace raw body
-                                    # Else: Skip cleaning if item isn't a dict or lacks 'body'
+                                            email_item['body'] = cleaned_body
+                                    
+                                    # Convert body_html to body_text if body_text is missing
+                                    if isinstance(email_item, dict) and 'body_html' in email_item and (not email_item.get('body_text') or not email_item.get('body_text').strip()):
+                                        html_content = email_item.get('body_html', '')
+                                        if html_content:
+                                            email_item['body_text'] = clean_email_content(html_content)
 
                             elif tool_name == 'search_emails' and 'results' in mcp_response and isinstance(mcp_response.get('results'), list):
-                                print("[Debug] Cleaning 'search_emails' response.")
                                 for email_item in mcp_response['results']:
-                                     # Check if the email item itself has a 'body' key
-                                     if isinstance(email_item, dict) and 'body' in email_item:
-                                        raw_body = email_item.get('body', '') # Get body safely
-                                        if raw_body: # Only clean if body exists
+                                    if isinstance(email_item, dict) and 'body' in email_item:
+                                        raw_body = email_item.get('body', '')
+                                        if raw_body:
                                             cleaned_body = clean_email_content(raw_body)
-                                            email_item['body'] = cleaned_body # Replace raw body
-                                     # Else: Skip cleaning if item isn't a dict or lacks 'body'        
+                                            email_item['body'] = cleaned_body
+                                    
+                                    # Convert body_html to body_text if body_text is missing
+                                    if isinstance(email_item, dict) and 'body_html' in email_item and (not email_item.get('body_text') or not email_item.get('body_text').strip()):
+                                        html_content = email_item.get('body_html', '')
+                                        if html_content:
+                                            email_item['body_text'] = clean_email_content(html_content)
+                    
                     except Exception as clean_e:
-                        print(f"[Warning] Error during email content cleaning: {clean_e}")
-                              
-                    print(json.dumps(mcp_response, indent=2))
-                    print("--- End Response ---")
+                        print(f"Error processing email content: {clean_e}")
+                    
+                    # Use our new display function instead of raw JSON dump
+                    display_clean_email_response(mcp_response, tool_name)
                 else:
                     print("Failed to execute tool or get response from MCP server.")
             else:
-                 print("Could not generate a valid tool request from your input.")
+                print("Could not generate a valid tool request from your input.")
 
 
 if __name__ == "__main__":
