@@ -31,26 +31,31 @@ def get_llm_tool_request(user_input, tool_definitions, llm_client, model_name):
         print("Tool definitions are not available. Cannot process request.")
         return None
 
-    # Construct the system prompt for the LLM
+    # Construct the system prompt for the LLM with improved instructions for numeric extraction
     prompt_system = f"""You are an expert AI assistant named Inbox Genie. Your task is to understand a user's request related to managing their Gmail emails and convert it into a specific JSON format to call an API tool.
 
 You have the following tools available:
 {json.dumps(tool_definitions, indent=2)}
 
+IMPORTANT: When a user specifies a number in their request (e.g., "last 4 emails"), you MUST use that exact number in the parameters (e.g., "limit": 4).
+
 COMMON USER REQUESTS AND HOW TO HANDLE THEM:
-1. "Show my emails" → read_emails with default parameters
+1. "Show my emails" → read_emails with default parameters (limit=5)
 2. "Show my last 5 emails" → read_emails with limit=5
-3. "Show my unread emails" → read_emails with unread_only=true
-4. "Search for emails about meetings" → search_emails with query="meetings"
-5. "Send an email to john@example.com" → send_email with appropriate parameters
+3. "Show my last 3 emails" → read_emails with limit=3 (EXACT number as specified)
+4. "Summarize my last 4 emails" → summarize_emails with limit=4 (EXACT number as specified)
+5. "Create a digest of my last 7 emails" → create_digest with limit=7 (EXACT number as specified)
+6. "Show my unread emails" → read_emails with unread_only=true
+7. "Search for emails about meetings" → search_emails with query="meetings"
+8. "Send an email to john@example.com" → send_email with appropriate parameters
 
 Based on the user's request, identify the single most appropriate tool to use and construct a JSON object with the required 'tool_name' and 'parameters'.
 
 Rules:
 - Only output the JSON object. Do not include any other text, explanation, or formatting like ```json ... ```.
 - Ensure all required parameters for the chosen tool are included in the JSON.
-- For 'read_emails': 
-  * Extract numbers mentioned (e.g., "show last 3 emails" → limit=3)
+- For 'read_emails', 'summarize_emails', and 'create_digest': 
+  * CRITICALLY IMPORTANT: Extract EXACT numbers mentioned (e.g., "show last 3 emails" → limit=3)
   * If "unread" is mentioned, set unread_only=true
   * Default limit is 5 if not specified
 
@@ -101,6 +106,11 @@ Rules:
                 return None
 
             print(f"Processing: {tool_request_json.get('tool_name')}...")
+            
+            # Debug print to show what parameters are being used
+            if 'limit' in tool_request_json.get('parameters', {}):
+                print(f"Using limit: {tool_request_json['parameters']['limit']}")
+                
             return tool_request_json
 
         except json.JSONDecodeError:

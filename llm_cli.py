@@ -91,9 +91,41 @@ def process_email_request(user_input, tool_definitions, llm_client):
         print("Failed to execute tool or get response from MCP server.")
         return
 
-    process_email_response(mcp_response, tool_name)
-    
-    display_clean_email_response(mcp_response, tool_name)
+    # Process based on tool type
+    if tool_name == 'summarize_emails':
+        # Handle summarization directly instead of using display_clean_email_response
+        summaries = mcp_response.get("summaries", [])
+        if not summaries:
+            print("\nNo emails found or no summaries returned by server.")
+            return
+            
+        # Display summaries (similar to fetch_and_summarize_emails)
+        print("\n" + "="*60)
+        print(" EMAIL SUMMARIES ".center(60, "="))
+        print("="*60)
+
+        for i, summary_data in enumerate(summaries, 1):
+            print(f"\nEmail {i}:")
+            print(f"  From: {summary_data.get('from', summary_data.get('from_email', 'Unknown'))}")
+            print(f"  Subject: {summary_data.get('subject', '(No subject)')}")
+            print(f"  Date: {summary_data.get('date', 'Unknown')}")
+            print(f"  Summary: {summary_data.get('summary', '(No summary)')}")
+            print("-" * 40)
+            
+    elif tool_name == 'create_digest':
+        # Handle digest directly instead of using display_clean_email_response
+        digest = mcp_response.get("digest", "No digest content returned.")
+        email_count = mcp_response.get("email_count", 0)
+        
+        print("\n" + "="*60)
+        print(f" EMAIL DIGEST ({email_count} emails) ".center(60, "="))
+        print("="*60 + "\n")
+        print(digest)
+        print("\n" + "="*60)
+    else:
+        # For regular email tools, use the standard process and display functions
+        process_email_response(mcp_response, tool_name)
+        display_clean_email_response(mcp_response, tool_name)
 
 def summarize_email(email_data, llm_client, max_words=50):
     """Summarize a single email using the LLM."""
@@ -146,7 +178,6 @@ def summarize_email(email_data, llm_client, max_words=50):
 def fetch_and_summarize_emails(limit=5, max_words=50):
     """
     Use the summarize_emails tool to fetch and summarize recent emails.
-    This version uses the server-side summarization tool rather than doing it in the client.
     """
     print(f"Fetching and summarizing the {limit} most recent emails...")
 
@@ -177,12 +208,18 @@ def fetch_and_summarize_emails(limit=5, max_words=50):
     print("="*60)
 
     for i, summary_data in enumerate(summaries, 1):
-        print(f"\nEmail {i}:")
-        print(f"  From: {summary_data.get('from', summary_data.get('from_email', 'Unknown'))}")
-        print(f"  Subject: {summary_data.get('subject', '(No subject)')}")
-        print(f"  Date: {summary_data.get('date', 'Unknown')}")
-        print(f"  Summary: {summary_data.get('summary', '(No summary)')}")
-        print("-" * 40)
+        print(f"\n{'-'*60}")
+        print(f" SUMMARY {i} ".center(60, "-"))
+        print(f"{'-'*60}")
+        
+        print(f"From: {summary_data.get('from', summary_data.get('from_email', 'Unknown'))}")
+        print(f"Subject: {summary_data.get('subject', '(No subject)')}")
+        print(f"Date: {summary_data.get('date', 'Unknown')}")
+        print(f"\nSummary:\n{summary_data.get('summary', '(No summary available)')}")
+    
+    print(f"\n{'-'*60}")
+    print(f" End of Summaries: {len(summaries)} email(s) summarized ".center(60, "-"))
+    print(f"{'-'*60}")
 
 def create_email_digest(emails, llm_client, max_emails=5):
     """
@@ -244,7 +281,6 @@ def create_email_digest(emails, llm_client, max_emails=5):
 def generate_email_digest(limit=10):
     """
     Use the create_digest tool to generate a digest of recent emails.
-    This version uses the server-side digest creation rather than doing it in the client.
     """
     print(f"Creating digest from {limit} most recent emails...")
 
