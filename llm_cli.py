@@ -144,41 +144,32 @@ def summarize_email(email_data, llm_client, max_words=50):
         }
 
 def fetch_and_summarize_emails(limit=5, max_words=50):
-    """Fetch and summarize recent emails using the LLM."""
-    llm_client = get_llm_client(OLLAMA_API_URL)
-    if not llm_client:
-        print("LLM client not available. Cannot summarize emails.")
-        return
+    """
+    Use the summarize_emails tool to fetch and summarize recent emails.
+    This version uses the server-side summarization tool rather than doing it in the client.
+    """
+    print(f"Fetching and summarizing the {limit} most recent emails...")
 
-    print(f"Fetching the {limit} most recent emails...")
-
-    email_request = {
-        "tool_name": "read_emails",
+    summarize_request = {
+        "tool_name": "summarize_emails",
         "parameters": {
-            "limit": limit
+            "limit": limit,
+            "max_words": max_words
         }
     }
 
     # Use the authenticated API call helper
-    response_data = make_api_call('POST', '/use_tool', json=email_request)
+    response_data = make_api_call('POST', '/use_tool', json=summarize_request)
 
-    if not response_data:
-        print("Failed to fetch emails.")
+    if response_data is None:
+        print("Failed to fetch email summaries.")
         return
 
-    emails = response_data.get("emails", [])
+    summaries = response_data.get("summaries", [])
 
-    if not emails:
-        print("No emails found or returned by server.")
+    if not summaries:
+        print("No emails found or no summaries returned by server.")
         return
-
-    print(f"Found {len(emails)} emails. Summarizing...")
-
-    summaries = []
-    for i, email in enumerate(emails, 1):
-        print(f"Summarizing email {i}/{len(emails)}: {email.get('subject', '(No subject)')}")
-        summary = summarize_email(email, llm_client, max_words)
-        summaries.append(summary)
 
     # Display summaries
     print("\n" + "="*60)
@@ -187,10 +178,10 @@ def fetch_and_summarize_emails(limit=5, max_words=50):
 
     for i, summary_data in enumerate(summaries, 1):
         print(f"\nEmail {i}:")
-        print(f"  From: {summary_data['from']}")
-        print(f"  Subject: {summary_data['subject']}")
+        print(f"  From: {summary_data.get('from', summary_data.get('from_email', 'Unknown'))}")
+        print(f"  Subject: {summary_data.get('subject', '(No subject)')}")
         print(f"  Date: {summary_data.get('date', 'Unknown')}")
-        print(f"  Summary: {summary_data['summary']}")
+        print(f"  Summary: {summary_data.get('summary', '(No summary)')}")
         print("-" * 40)
 
 def create_email_digest(emails, llm_client, max_emails=5):
@@ -251,40 +242,31 @@ def create_email_digest(emails, llm_client, max_emails=5):
         return f"Failed to create daily digest: {str(e)}"
 
 def generate_email_digest(limit=10):
-    """Fetch and create a digest of recent emails."""
-    llm_client = get_llm_client(OLLAMA_API_URL)
-    if not llm_client:
-        print("LLM client not available. Cannot create digest.")
-        return
+    """
+    Use the create_digest tool to generate a digest of recent emails.
+    This version uses the server-side digest creation rather than doing it in the client.
+    """
+    print(f"Creating digest from {limit} most recent emails...")
 
-    print(f"Fetching the {limit} most recent emails for digest...")
-
-    email_request = {
-        "tool_name": "read_emails",
+    digest_request = {
+        "tool_name": "create_digest",
         "parameters": {
             "limit": limit
         }
     }
 
     # Use the authenticated API call helper
-    response_data = make_api_call('POST', '/use_tool', json=email_request)
+    response_data = make_api_call('POST', '/use_tool', json=digest_request)
 
     if not response_data:
-        print("Failed to fetch emails.")
+        print("Failed to create email digest.")
         return
 
-    emails = response_data.get("emails", [])
-
-    if not emails:
-        print("No emails found or returned by server.")
-        return
-
-    print(f"Creating digest from {len(emails)} emails...")
-    
-    digest = create_email_digest(emails, llm_client, max_emails=limit)
+    digest = response_data.get("digest", "No digest content returned.")
+    email_count = response_data.get("email_count", 0)
     
     print("\n" + "="*60)
-    print(" EMAIL DIGEST ".center(60, "="))
+    print(f" EMAIL DIGEST ({email_count} emails) ".center(60, "="))
     print("="*60 + "\n")
     print(digest)
     print("\n" + "="*60)
@@ -360,42 +342,85 @@ def main():
         elif command == "revoke":
             handle_revoke_command()
             
-        elif command == "summarize" or command == "digest":
-            # For explicit commands, use the direct implementation
-            if command == "summarize" and len(parts) == 1:
-                # Default summarize command
-                fetch_and_summarize_emails(5, 50)
-            elif command == "summarize":
-                # Extract limit and max_words if provided
-                limit = 5  # Default
-                max_words = 50  # Default
-                
-                # Check for limit
-                if len(parts) > 1 and parts[1].isdigit():
-                    limit = int(parts[1])
-                    if limit <= 0 or limit > 50:
-                        print("Please enter a number between 1 and 50 for limit.")
-                        continue
-                
-                # Check for max_words
-                if len(parts) > 2 and parts[2].isdigit():
-                    max_words = int(parts[2])
-                    if max_words <= 0 or max_words > 200:
-                        print("Please enter a number between 1 and 200 for max words.")
-                        continue
-                
-                fetch_and_summarize_emails(limit, max_words)
-            elif command == "digest":
-                # Extract limit if provided
-                limit = 10  # Default
-                if len(parts) > 1 and parts[1].isdigit():
-                    limit = int(parts[1])
-                    if limit <= 0 or limit > 20:
-                        print("Please enter a number between 1 and 20.")
-                        continue
-                
-                generate_email_digest(limit)
+        elif command == "summarize":
+            # Extract limit and max_words if provided
+            limit = 5  # Default
+            max_words = 50  # Default
             
+            # Check for limit
+            if len(parts) > 1 and parts[1].isdigit():
+                limit = int(parts[1])
+                if limit <= 0 or limit > 50:
+                    print("Please enter a number between 1 and 50 for limit.")
+                    continue
+            
+            # Check for max_words
+            if len(parts) > 2 and parts[2].isdigit():
+                max_words = int(parts[2])
+                if max_words <= 0 or max_words > 200:
+                    print("Please enter a number between 1 and 200 for max words.")
+                    continue
+            
+            fetch_and_summarize_emails(limit, max_words)
+            
+        elif command == "digest":
+            # Extract limit if provided
+            limit = 10  # Default
+            if len(parts) > 1 and parts[1].isdigit():
+                limit = int(parts[1])
+                if limit <= 0 or limit > 20:
+                    print("Please enter a number between 1 and 20.")
+                    continue
+            
+            generate_email_digest(limit)
+            
+        elif command == "read":
+            # Directly use the read_emails tool
+            limit = 5  # Default
+            if len(parts) > 1 and parts[1].isdigit():
+                limit = int(parts[1])
+            
+            read_request = {
+                "tool_name": "read_emails",
+                "parameters": {
+                    "limit": limit
+                }
+            }
+            
+            response_data = make_api_call('POST', '/use_tool', json=read_request)
+            if response_data:
+                display_clean_email_response(response_data, "read_emails")
+                
+        elif command == "unread":
+            # Directly use the read_emails tool with unread_only=True
+            unread_request = {
+                "tool_name": "read_emails",
+                "parameters": {
+                    "limit": 5,
+                    "unread_only": True
+                }
+            }
+            
+            response_data = make_api_call('POST', '/use_tool', json=unread_request)
+            if response_data:
+                display_clean_email_response(response_data, "read_emails")
+                
+        elif command == "search" and len(parts) > 1:
+            # Get the search query from the rest of the input
+            query = ' '.join(parts[1:])
+            
+            search_request = {
+                "tool_name": "search_emails",
+                "parameters": {
+                    "query": query,
+                    "limit": 5
+                }
+            }
+            
+            response_data = make_api_call('POST', '/use_tool', json=search_request)
+            if response_data:
+                display_clean_email_response(response_data, "search_emails")
+                
         elif command == "help":
             # Just continue to show the help text again
             continue
@@ -403,77 +428,19 @@ def main():
         else:
             # Use the LLM to determine what the user wants to do
             if llm_client:
+                # This is where we would have the complex LLM classification logic
+                # to determine whether to summarize, digest, or process as an email request
+                # But now we'll just check if it's an email related query and
+                # send direct email requests to the server
+                
                 try:
-                    # First, check if this is about summarizing emails in natural language
-                    summarize_prompt = f"""
-                    Analyze this user request and determine if it's asking to summarize emails:
-                    
-                    "{user_input}"
-                    
-                    If the user is asking to summarize emails (like "summarize my recent emails", 
-                    "give me summaries of my last few emails", etc.), respond with:
-                    SUMMARIZE: [number of emails to summarize]
-                    
-                    If the user is asking for a digest of emails, respond with:
-                    DIGEST: [number of emails to include]
-                    
-                    If the request is not about summarizing emails or creating a digest, respond with exactly:
-                    NOT_SUMMARIZE
-                    
-                    Just return one of these response formats, nothing else.
-                    """
-                    
-                    summarize_response = llm_client.chat.completions.create(
-                        model=MODEL_NAME,
-                        messages=[{"role": "user", "content": summarize_prompt}],
-                        max_tokens=20,
-                        temperature=0.1
-                    )
-                    
-                    response_text = summarize_response.choices[0].message.content.strip()
-                    
-                    if response_text.startswith("SUMMARIZE:"):
-                        try:
-                            # Extract the number if present
-                            num_str = response_text.split(":", 1)[1].strip()
-                            if num_str.isdigit():
-                                limit = int(num_str)
-                            else:
-                                limit = 5  # Default if not a number
-                            
-                            print(f"Fetching and summarizing your {limit} most recent emails...")
-                            fetch_and_summarize_emails(limit=limit)
-                            continue
-                        except Exception as e:
-                            print(f"Error processing summarization request: {e}")
-                            fetch_and_summarize_emails()  # Use defaults
-                            continue
-                    
-                    elif response_text.startswith("DIGEST:"):
-                        try:
-                            # Extract the number if present
-                            num_str = response_text.split(":", 1)[1].strip()
-                            if num_str.isdigit():
-                                limit = int(num_str)
-                            else:
-                                limit = 10  # Default if not a number
-                            
-                            print(f"Creating digest from your {limit} most recent emails...")
-                            generate_email_digest(limit=limit)
-                            continue
-                        except Exception as e:
-                            print(f"Error processing digest request: {e}")
-                            generate_email_digest()  # Use defaults
-                            continue
-                    
-                    # If not a summary/digest request, fall through to normal processing
-                    # Using LLM to determine if this is an email-related query
+                    # Simple classification to determine if this is an email-related query
                     classification_prompt = f"""
                     Determine if the following user query is related to email operations or if it's a general conversation query.
                     
                     User query: "{user_input}"
                     
-                    If this query is about reading, searching, sending, or otherwise managing emails,
+                    If this query is about reading, searching, sending, summarizing emails or creating a digest,
                     respond with exactly "EMAIL_RELATED". 
                     
                     If this is a general conversation or question not related to email operations,
@@ -492,7 +459,7 @@ def main():
                     classification = classification_response.choices[0].message.content.strip()
                     
                     if "EMAIL_RELATED" in classification:
-                        # Process as an email request
+                        # Process as an email request through the server
                         process_email_request(user_input, tool_definitions, llm_client)
                     else:
                         # Handle as a general conversation

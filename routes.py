@@ -1,11 +1,12 @@
 from fastapi import APIRouter, HTTPException, Depends, Body, Query, status
 from pydantic import BaseModel, Field
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, List
 from google.oauth2.credentials import Credentials
 
 import gmail_oauth_handler as gmail_oauth_handler
 import gmail_tools as gmail_tools
 from auth_utils import verify_token
+import email_summarizer  # Import the summarizer module
 
 class ToolRequest(BaseModel):
     tool_name: str
@@ -24,6 +25,12 @@ class TokenResponse(BaseModel):
     token_type: str = "Bearer"
     scope: Optional[str] = None
     id_token: Optional[str] = None
+
+class EmailSummary(BaseModel):
+    from_email: str
+    subject: str
+    date: Optional[str] = None
+    summary: str
 
 router = APIRouter()
 
@@ -111,6 +118,23 @@ async def list_tools(creds: Credentials = Depends(verify_token)):
                     "query": "Search query",
                     "limit": "Maximum number of results (default: 10)"
                 }
+            },
+            {
+                "name": "summarize_emails",
+                "description": "Fetch and summarize emails",
+                "parameters": {
+                    "limit": "Number of emails to summarize (default: 5)",
+                    "max_words": "Maximum words per summary (default: 50)",
+                    "unread_only": "Only summarize unread emails (default: false)"
+                }
+            },
+            {
+                "name": "create_digest",
+                "description": "Create a digest of recent emails",
+                "parameters": {
+                    "limit": "Number of emails to include in digest (default: 10)",
+                    "unread_only": "Only include unread emails (default: false)"
+                }
             }
         ]
     }
@@ -169,6 +193,50 @@ async def use_tool(
                 limit=limit
             )
             return {"query": query, "results": emails}
+            
+        elif tool_name == "summarize_emails":
+            limit = int(params.get("limit", 5))
+            max_words = int(params.get("max_words", 50))
+            unread_only = params.get("unread_only", False)
+            
+            # First, fetch the emails using the existing read_emails function
+            emails = gmail_tools.read_emails(
+                credentials=creds, 
+                limit=limit,
+                folder="INBOX",
+                unread_only=unread_only
+            )
+            
+            if not emails:
+                return {"summaries": [], "message": "No emails found to summarize"}
+                
+            # Use the email_summarizer to summarize each email
+            summaries = []
+            for email in emails:
+                summary = email_summarizer.summarize_email(email, max_words)
+                summaries.append(summary)
+                
+            return {"summaries": summaries}
+            
+        elif tool_name == "create_digest":
+            limit = int(params.get("limit", 10))
+            unread_only = params.get("unread_only", False)
+            
+            # First, fetch the emails
+            emails = gmail_tools.read_emails(
+                credentials=creds, 
+                limit=limit,
+                folder="INBOX",
+                unread_only=unread_only
+            )
+            
+            if not emails:
+                return {"digest": "No emails found to create digest", "email_count": 0}
+                
+            # Create the digest using the email_summarizer module
+            digest = email_summarizer.create_email_digest(emails)
+            
+            return {"digest": digest, "email_count": len(emails)}
 
         else:
             raise HTTPException(status_code=400, detail=f"Unsupported tool: {tool_name}")
