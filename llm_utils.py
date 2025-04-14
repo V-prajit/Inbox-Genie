@@ -1,13 +1,13 @@
 import json
 import openai
 
+
 def get_llm_client(api_url):
     if not api_url:
         print("Warning: LLM API URL not configured in environment.")
         return None
         
     try:
-        # Initialize OpenAI client with Ollama API URL
         client = openai.OpenAI(
             base_url=api_url,
             api_key="ollama",  # Ollama doesn't check API key but requires one
@@ -31,28 +31,29 @@ def get_llm_tool_request(user_input, tool_definitions, llm_client, model_name):
         print("Tool definitions are not available. Cannot process request.")
         return None
 
-    # Construct the system prompt for the LLM
-    prompt_system = f"""You are an expert AI assistant named Inbox Genie. Your task is to understand a user's request related to managing their Gmail emails and convert it into a specific JSON format to call an API tool.
+    prompt_system = f"""You are an expert AI assistant named Inbox Genie. Your task is to understand a user's natural language request related to managing their Gmail emails and convert it into a specific JSON format to call an API tool.
 
 You have the following tools available:
 {json.dumps(tool_definitions, indent=2)}
 
-COMMON USER REQUESTS AND HOW TO HANDLE THEM:
-1. "Show my emails" → read_emails with default parameters
-2. "Show my last 5 emails" → read_emails with limit=5
-3. "Show my unread emails" → read_emails with unread_only=true
-4. "Search for emails about meetings" → search_emails with query="meetings"
-5. "Send an email to john@example.com" → send_email with appropriate parameters
+CRITICALLY IMPORTANT: You must precisely extract any numbers mentioned in the user request.
+
+Examples of EXACT numeric extraction:
+- "summarize my last 4 emails" → limit=4
+- "read my recent 3 messages" → limit=3 
+- "show me 7 unread emails" → limit=7
+- "create a digest of my top 10 emails" → limit=10
+- "get my last 6 emails and summarize them in 50 words" → limit=6, max_words=50
 
 Based on the user's request, identify the single most appropriate tool to use and construct a JSON object with the required 'tool_name' and 'parameters'.
 
 Rules:
 - Only output the JSON object. Do not include any other text, explanation, or formatting like ```json ... ```.
 - Ensure all required parameters for the chosen tool are included in the JSON.
-- For 'read_emails': 
-  * Extract numbers mentioned (e.g., "show last 3 emails" → limit=3)
+- For 'read_emails', 'summarize_emails', and 'create_digest': 
+  * ALWAYS extract EXACT numbers mentioned (e.g., "show last 3 emails" → limit=3)
   * If "unread" is mentioned, set unread_only=true
-  * Default limit is 5 if not specified
+  * Default limit is 5 ONLY if no number is mentioned
 
 - For 'search_emails':
   * Extract search terms (e.g., "find emails about projects" → query="projects")
@@ -80,7 +81,6 @@ Rules:
             temperature=0.1  # Low temperature for more deterministic output
         )
         
-        # Extract the response text
         llm_output = llm_response.choices[0].message.content.strip()
 
         try:
@@ -101,6 +101,10 @@ Rules:
                 return None
 
             print(f"Processing: {tool_request_json.get('tool_name')}...")
+            
+            if 'limit' in tool_request_json.get('parameters', {}):
+                print(f"Using limit: {tool_request_json['parameters']['limit']}")
+                
             return tool_request_json
 
         except json.JSONDecodeError:

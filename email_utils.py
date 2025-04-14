@@ -78,6 +78,20 @@ def clean_email_content(raw_content):
         return body.strip()
 
 def display_clean_email_response(response_data, tool_name, limit=None, show_full=False):
+    """Display email results from various tools."""
+    
+    # Based on the tool_name, use the appropriate display function
+    if tool_name == 'read_emails' or tool_name == 'search_emails':
+        display_email_list(response_data, tool_name, limit, show_full)
+    elif tool_name == 'summarize_emails':
+        display_email_summaries(response_data, limit)
+    elif tool_name == 'create_digest':
+        display_email_digest(response_data)
+    else:
+        print(f"\nUnknown tool response for '{tool_name}'")
+
+def display_email_list(response_data, tool_name, limit=None, show_full=False):
+    """Display a list of emails from read_emails or search_emails tools."""
     print("\n" + "="*60)
     print(" EMAIL RESULTS ".center(60, "="))
     print("="*60)
@@ -124,9 +138,59 @@ def display_clean_email_response(response_data, tool_name, limit=None, show_full
     print(f" End of Results: {len(emails)} email(s) displayed ".center(60, "-"))
     print(f"{'-'*60}")
 
+def display_email_summaries(response_data, limit=None):
+    """Display email summaries from summarize_emails tool."""
+    print("\n" + "="*60)
+    print(" EMAIL SUMMARIES ".center(60, "="))
+    print("="*60)
+    
+    summaries = response_data.get('summaries', [])
+    
+    if not summaries:
+        print("\nNo email summaries found.")
+        return
+    
+    if limit and isinstance(limit, int) and limit > 0:
+        summaries = summaries[:limit]
+    
+    for i, summary in enumerate(summaries, 1):
+        print(f"\n{'-'*60}")
+        print(f" SUMMARY {i} ".center(60, "-"))
+        print(f"{'-'*60}")
+        
+        print(f"From: {summary.get('from', summary.get('from_email', 'Unknown'))}")
+        print(f"Subject: {summary.get('subject', '(No subject)')}")
+        print(f"Date: {summary.get('date', 'Unknown')}")
+        print(f"\nSummary:\n{summary.get('summary', '(No summary available)')}")
+    
+    print(f"\n{'-'*60}")
+    print(f" End of Summaries: {len(summaries)} email(s) summarized ".center(60, "-"))
+    print(f"{'-'*60}")
+
+def display_email_digest(response_data):
+    """Display email digest from create_digest tool."""
+    print("\n" + "="*60)
+    email_count = response_data.get('email_count', 0)
+    print(f" EMAIL DIGEST ({email_count} emails) ".center(60, "="))
+    print("="*60)
+    
+    digest = response_data.get('digest', '')
+    
+    if not digest:
+        print("\nNo digest content available.")
+        return
+    
+    print(f"\n{digest}")
+    
+    print(f"\n{'-'*60}")
+    print(" End of Digest ".center(60, "-"))
+    print(f"{'-'*60}")
+
 def process_email_response(response, tool_name):
+    """Process and clean email content from various tools."""
     try:
-        tools_returning_email = ['read_emails', 'search_emails']
+        # Add all tools that return email content
+        tools_returning_email = ['read_emails', 'search_emails', 'summarize_emails']
         if tool_name not in tools_returning_email:
             return
             
@@ -135,6 +199,8 @@ def process_email_response(response, tool_name):
             email_list = response['emails']
         elif tool_name == 'search_emails' and 'results' in response:
             email_list = response['results']
+        elif tool_name == 'summarize_emails' and 'summaries' in response:
+            email_list = response['summaries']
             
         if not email_list or not isinstance(email_list, list):
             return
