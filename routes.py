@@ -1,7 +1,6 @@
-from fastapi import APIRouter, HTTPException, Request, Depends, Body, Query, status
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, HTTPException, Depends, Body, Query, status
 from pydantic import BaseModel, Field
-from typing import Dict, List, Optional, Any
+from typing import Dict, Optional, Any
 from google.oauth2.credentials import Credentials
 
 import gmail_oauth_handler as gmail_oauth_handler
