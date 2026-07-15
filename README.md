@@ -13,16 +13,16 @@ I built Inbox-Genie to summarize and manage Gmail entirely on my own machine. It
 
 ## Layout
 
-- `mcp_server.py`, `routes.py`, `api.py` — FastAPI server exposing email tools
-- `gmail_oauth_handler.py`, `auth.py`, `auth_utils.py` — OAuth flow and token handling
-- `gmail_tools.py`, `email_utils.py`, `email_summarizer.py` — Gmail access and summarization logic
-- `llm_utils.py`, `llm_cli.py`, `cli.py` — local LLM calls and the CLI entry point
+- `mcp_server.py`, `routes.py`, `api.py`: FastAPI server exposing email tools
+- `gmail_oauth_handler.py`, `auth.py`, `auth_utils.py`: OAuth flow and token handling
+- `gmail_tools.py`, `email_utils.py`, `email_summarizer.py`: Gmail access and summarization logic
+- `llm_utils.py`, `llm_cli.py`, `cli.py`: local LLM calls and the CLI entry point
 
 ## Setup
 
 1. `python -m venv .venv && .\.venv\Scripts\activate` then `pip install -r requirements.txt`
 2. Install [Ollama](https://ollama.com) and pull the model: `ollama pull llama3.1:8b-instruct-q4_K_M`
-3. In Google Cloud Console, create OAuth 2.0 credentials for the Gmail API and download them as `client_secret.json` in the project root (this file is git-ignored — never commit it)
+3. In Google Cloud Console, create OAuth 2.0 credentials for the Gmail API and download them as `client_secret.json` in the project root (this file is git-ignored, never commit it)
 4. Create a `.env`:
    ```
    BASE_URL=http://localhost:11434/v1
@@ -45,8 +45,8 @@ Example commands: `summarize my last 5 emails`, `search for emails about meeting
 
 ## Notes
 
-The internal "model / context / protocol" split here was my own design vocabulary from when I built this, not an implementation of Anthropic's Model Context Protocol spec — the naming overlap is coincidental. This covers the basic summarize/digest/search flows; it is a personal tool, not a maintained library, and I have not hardened it for untrusted input or production use.
+The internal "model / context / protocol" split here was my own design vocabulary from when I built this, not an implementation of Anthropic's Model Context Protocol spec (the naming overlap is coincidental). This covers the basic summarize/digest/search flows; it is a personal tool, not a maintained library, and I have not hardened it for untrusted input or production use.
 
 ## License
 
-No license file yet — treat as all-rights-reserved until one is added.
+No license file yet. Treat as all-rights-reserved until one is added.
